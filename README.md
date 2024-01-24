@@ -38,4 +38,11 @@ You will need both the [Serverless](https://www.serverless.com/framework/docs/ge
 Once all the resources have been created, you can call the number and it will generate 3 vanity phone numbers based on your phone number.
 
 *Note, this project assumes that you have all the permissions on your AWS account to create the resources defined in the project.
-  
+
+
+
+## Project Background
+The goal for this project was to simplify and automate the deployment of an AWS Contact Flow as much as possible. Initially I would have liked to contain all resources into a single CloudFormation template file, `aws_contact.yml`, and be able to deploy everything with one command, however I came about a hurdle when I needed to create a lambda with third-party dependancies. Therefore, I chose to create a seperate Serverless stack where I can package the lambda and its dependancies with webpack and deploy using the Serverless framework.
+With some more time, I would have loved to create the support for different environments, e.g. `dev` `staging`, and `prod`. I would also have liked to improve the Vanity Number generator lambda with a better algorithm, and add some testing suites as well.
+
+
