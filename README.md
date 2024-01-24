@@ -35,7 +35,7 @@ You will need both the [Serverless](https://www.serverless.com/framework/docs/ge
 
   <img width="861" alt="image" src="https://github.com/adrielarce/aws-connect-contact-flow/assets/47565489/8d55dbee-7f58-41c8-b8a9-643f1e4e01d7">
 
-Once all the resources have been created, you can call the number and it will generate 3 vanity phone numbers based on your phone number.
+Once all the resources have been created, you can call the number and it will generate 3 vanity phone numbers based on your phone number. The full list of 5 vanity numbers will be stored in a DynamoDB Table: `PhoneNumbers`.
 
 *Note, this project assumes that you have all the permissions on your AWS account to create the resources defined in the project.
 
