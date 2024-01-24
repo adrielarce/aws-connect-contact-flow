@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Connect + Contact Flow for receiving phone calls and returning vanity numbers
+Resources:
+  ConnectInstance:
+    Type: AWS::Connect::Instance
+    Properties:
+      Attributes:
+        ContactflowLogs: true
+        InboundCalls: true
+        OutboundCalls: false
+      IdentityManagementType: CONNECT_MANAGED
+      InstanceAlias: My-TTEC-Connect-Instance
+  ContactFlow:
+    Type: "AWS::Connect::ContactFlow"
+    Properties:
+      Name: VanityPhoneNumberFlow
+      Description: Contact Flow for our Connect Instance
+      InstanceArn: !Ref ConnectInstance
+      Type: CONTACT_FLOW
+      Content: !Sub |
+        {
+          "Version": "2019-10-30",
+          "StartAction": "connect-flow-logging",
+          "Metadata": {
+            "entryPointPosition": {
+              "x": -408,
+              "y": 171.2
+            },
+            "ActionMetadata": {
+              "5ea8ece2-ad30-43c7-a758-64ae2bd33dfc": {
+                "position": {
+                  "x": 8.8,
+                  "y": 194.4
+                }
+              }
+            }
+          },
+          "Actions": [
+            {
+              "Parameters": {
+                "Text": "Welcome to the TTEC Vanity Phone Number hotline. Please hold while we generate your vanity numbers."
+              },
+              "Identifier": "connect-flow-greeting",
+              "Type": "MessageParticipant",
+              "Transitions": {
+                "NextAction": "connect-flow-lambda-vanity-numbers",
+                "Errors": [
+                  {
+                    "NextAction": "connect-flow-end",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {},
+              "Identifier": "connect-flow-end",
+              "Type": "DisconnectParticipant",
+              "Transitions": {}
+            },
+            {
+              "Parameters": {
+                "LambdaFunctionARN": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:VanityNumbersLambdaFunction",
+                "InvocationTimeLimitSeconds": "8",
+                "LambdaInvocationAttributes": {
+                  "CallerPhoneNumber": "$.CustomerEndpoint.Address"
+                },
+                "ResponseValidation": {
+                  "ResponseType": "JSON"
+                }
+              },
+              "Identifier": "connect-flow-lambda-vanity-numbers",
+              "Type": "InvokeLambdaFunction",
+              "Transitions": {
+                "NextAction": "connect-flow-lambda-vanity-numbers-result",
+                "Errors": [
+                  {
+                    "NextAction": "connect-flow-end",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "Text": "$.External.text"
+              },
+              "Identifier": "connect-flow-lambda-vanity-numbers-result",
+              "Type": "MessageParticipant",
+              "Transitions": {
+                "NextAction": "connect-flow-end",
+                "Errors": [
+                  {
+                    "NextAction": "connect-flow-end",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ]
+              }
+            },
+            {
+              "Parameters": {
+                "FlowLoggingBehavior": "Enabled"
+              },
+              "Identifier": "connect-flow-logging",
+              "Type": "UpdateFlowLoggingBehavior",
+              "Transitions": {
+                "NextAction": "connect-flow-greeting"
+              }
+            }
+          ]
+        }
+
+  PhoneNumber:
+    Type: AWS::Connect::PhoneNumber
+    Properties:
+      TargetArn: !Ref ConnectInstance
+      Description: AnyCompany Phone Number
+      Type: TOLL_FREE
+      CountryCode: US
+
+  CustomResourceAssociatePhoneNumberToContactFlow: #This resource invokes our lambda function that associates our PhoneNumber to the ContactFlow
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt LambdaFunctionAssociatePhoneNumberToContactFlow.Arn
+
+  LambdaFunctionAssociatePhoneNumberToContactFlow:
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: Permission to write to CloudWatch logs is part of the managed policy AWSLambdaBasicExecutionRole
+          - id: W89
+            reason: Lambda function does not interact with resources in the VPC and does not handle sensitive data
+          - id: W92
+            reason: This lambda function does not require ReservedConcurrentExecutions
+    Properties:
+      Handler: index.lambda_handler
+      Description: >
+        Associate phone number to contact flow
+      Role: !GetAtt AssociatePhoneNumberToContactFlowRole.Arn
+      Runtime: nodejs14.x
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+          INSTANCE_ID: !GetAtt ConnectInstance.Id
+          PHONE_NUMBER_ID: !Select [1, !Split ["/", !Ref PhoneNumber]]
+          CONTACT_FLOW_ID: !Select [3, !Split ["/", !Ref ContactFlow]]
+      Code:
+        ZipFile: |
+          const AWS = require("aws-sdk");
+          const cfnResponse = require("cfn-response");
+          const connect = new AWS.Connect();
+
+          const instanceId = process.env.INSTANCE_ID;
+          const phoneNumberId = process.env.PHONE_NUMBER_ID;
+          const contactFlowId = process.env.CONTACT_FLOW_ID;
+
+          exports.lambda_handler = async (event, context) => {
+            const requestType = event.RequestType;
+
+            if (requestType === "Create" || requestType === "Update") {
+              try {
+                await connect
+                  .associatePhoneNumberContactFlow({
+                    InstanceId: instanceId,
+                    PhoneNumberId: phoneNumberId,
+                    ContactFlowId: contactFlowId
+                  })
+                  .promise();
+
+                await cfnResponse.send(event, context, cfnResponse.SUCCESS, {});
+              } catch (error) {
+                console.error("Error during association:", error);
+                await cfnResponse.send(event, context, cfnResponse.FAILED, {});
+              }
+            } else {              
+              await cfnResponse.send(event, context, cfnResponse.FAILED, {});
+            }
+          };
+  AssociatePhoneNumberToContactFlowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: associatePhoneNumberContactFlow
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - connect:AssociatePhoneNumberContactFlow
+                  - connect:AWSLambdaFullAccess
+                  # - lambda:InvokeFunction
+                Resource:
+                  - !Sub arn:${AWS::Partition}:connect:${AWS::Region}:${AWS::AccountId}:instance/${ConnectInstance.Id}/contact-flow*
+                  - !Sub arn:${AWS::Partition}:connect:${AWS::Region}:${AWS::AccountId}:phone-number*
+                  # - arn:aws:lambda:us-east-1:891377243295:function:VanityNumbersLambdaFunction
+
+                Condition:
+                  StringEquals:
+                    connect:InstanceId: !GetAtt ConnectInstance.Id
+              - Effect: Allow
+                Action:
+                  - connect:DisassociatePhoneNumberContactFlow
+                Resource:
+                  - !Sub arn:${AWS::Partition}:connect:${AWS::Region}:${AWS::AccountId}:phone-number*
+                Condition:
+                  StringEquals:
+                    connect:InstanceId: !GetAtt ConnectInstance.Id
+
+Outputs:
+  PhoneNumberArnOutput:
+    Value: !GetAtt PhoneNumber.Address
+    Export:
+      Name: PhoneNumber

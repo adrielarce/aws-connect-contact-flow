@@ -1,0 +1,13 @@
+{
+  "name": "english-words-layer",
+  "version": "1.0.0",
+  "description": "A layer containing English words set",
+  "main": "index.js",
+  "dependencies": {
+    "an-array-of-english-words": "^2.0.0"
+  },
+  "devDependencies": {
+    "serverless-webpack": "^5.13.0",
+    "webpack": "^5.89.0"
+  }
+}
