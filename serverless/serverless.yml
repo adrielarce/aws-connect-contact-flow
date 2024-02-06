@@ -57,12 +57,13 @@ resources:
           ReadCapacityUnits: "5"
           WriteCapacityUnits: "5"
 
-    LambdaPermissionConnectInvoke: # This is bad practise for production as we are allowing any service to invoke this function
+    LambdaPermissionConnectInvoke:
       Type: AWS::Lambda::Permission
+      DependsOn: VanityNumbersLambdaFunctionLambdaFunction
       Properties:
         Action: lambda:InvokeFunction
-        FunctionName: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:VanityNumbersLambdaFunction # this should be dynamically referenced
-        Principal: "*"
+        FunctionName: VanityNumbersLambdaFunction # this should be dynamically referenced
+        Principal: "*" # This is bad practise for production as we are allowing any service to invoke this function
 
 custom:
   webpack:

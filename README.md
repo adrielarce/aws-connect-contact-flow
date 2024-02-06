@@ -22,7 +22,7 @@ You will need both the [Serverless](https://www.serverless.com/framework/docs/ge
    
     cd ..
     
-    aws cloudformation update-stack \                                               
+    aws cloudformation create-stack \
     --stack-name TTECConnectStack \
     --template-body file://aws_connect.yml \
     --capabilities CAPABILITY_AUTO_EXPAND CAPABILITY_IAM CAPABILITY_NAMED_IAM \
